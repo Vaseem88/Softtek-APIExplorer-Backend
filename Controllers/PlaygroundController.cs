@@ -18,7 +18,7 @@ public sealed class PlaygroundController : ControllerBase
     [HttpPost("load")]
     [RequestSizeLimit(10_000_000)]
     public async Task<ActionResult<PlaygroundLoadResponse>> LoadOpenApiAsync(
-        [FromForm] PlaygroundLoadFormRequest request,
+        [FromBody] PlaygroundLoadFormRequest request,
         CancellationToken cancellationToken)
     {
         request.SessionId = Guid.NewGuid().ToString();
