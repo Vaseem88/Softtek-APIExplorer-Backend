@@ -32,7 +32,7 @@ builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IExecutionProxyService, ExecutionProxyService>();
 builder.Services.AddScoped<ISemanticErrorService, SemanticErrorService>();
 builder.Services.AddScoped<AIService>();
-builder.Services.AddScoped<TextEmbeddingAIService>();
+builder.Services.AddSingleton<TextEmbeddingAIService>();
 builder.Services.AddSingleton<IEnterpriseLlmClient, MockEnterpriseLlmClient>();
 
 var app = builder.Build();

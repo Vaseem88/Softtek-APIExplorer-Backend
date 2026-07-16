@@ -8,6 +8,11 @@ namespace Softtek_APIExplorer_Backend.Services
     {
         public static async Task<bool> IngestData(VectorStoreCollection<Guid, ApiQueriesVectorStore> vectorStoreCollection, PlaygroundLoadResponse playgroundLoadResponse, CancellationToken cancellationToken = default)
         {
+            var isCollectionExists = await vectorStoreCollection.CollectionExistsAsync();
+            if (isCollectionExists)
+            {
+                return true;
+            }
             await vectorStoreCollection.EnsureCollectionDeletedAsync(cancellationToken);
             await vectorStoreCollection.EnsureCollectionExistsAsync(cancellationToken);
 

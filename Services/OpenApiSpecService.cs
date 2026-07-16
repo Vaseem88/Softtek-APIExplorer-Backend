@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.OpenApi.Models;
 using Microsoft.OpenApi.Readers;
+using Microsoft.OpenApi.Validations;
 using Softtek_APIExplorer_Backend.Exceptions;
 using Softtek_APIExplorer_Backend.Models;
 
@@ -11,6 +12,11 @@ namespace Softtek_APIExplorer_Backend.Services;
 public sealed class OpenApiSpecService : IOpenApiSpecService
 {
     private const string CachePrefix = "openapi-session:";
+    private static readonly OpenApiReaderSettings ReaderSettings = new()
+    {
+        RuleSet = ValidationRuleSet.GetEmptyRuleSet()
+    };
+
     private readonly IMemoryCache _memoryCache;
     private readonly IHttpClientFactory _httpClientFactory;
 
@@ -136,7 +142,7 @@ public sealed class OpenApiSpecService : IOpenApiSpecService
     {
         try
         {
-            var openApiReader = new OpenApiStringReader();
+            var openApiReader = new OpenApiStringReader(ReaderSettings);
             var document = openApiReader.Read(rawPayload, out var diagnostic);
 
             if (diagnostic?.Errors is { Count: > 0 })

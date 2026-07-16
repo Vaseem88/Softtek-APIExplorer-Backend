@@ -14,4 +14,11 @@
     <PackageReference Include="Microsoft.SemanticKernel.Connectors.SqliteVec" Version="1.74.0-preview" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="BenchmarkSuite1\**\*.cs" />
+    <Content Remove="BenchmarkSuite1\**\*" />
+    <None Remove="BenchmarkSuite1\**\*" />
+    <EmbeddedResource Remove="BenchmarkSuite1\**\*" />
+  </ItemGroup>
 </Project>

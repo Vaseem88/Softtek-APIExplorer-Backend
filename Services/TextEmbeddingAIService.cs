@@ -12,6 +12,10 @@ namespace Softtek_APIExplorer_Backend.Services
         private readonly ILogger<TextEmbeddingAIService> _logger;
         private readonly AzureOpenAIClient _embeddingClient;
         private readonly string modelId;
+        private readonly string sqliteConnectionString;
+        private readonly SqliteVectorStore _sqliteVectorStore;
+        private readonly SemaphoreSlim _collectionLock = new(1, 1);
+        private static VectorStoreCollection<Guid, ApiQueriesVectorStore>? _cachedVectorStoreCollection;
 
         public TextEmbeddingAIService(IConfiguration configuration, ILogger<TextEmbeddingAIService> logger)
         {
@@ -20,10 +24,11 @@ namespace Softtek_APIExplorer_Backend.Services
             modelId = configuration["TextEmbeddingAI:ModelId"];
             var apiKey = configuration["TextEmbeddingAI:ApiKey"];
             var endpoint = configuration["TextEmbeddingAI:Endpoint"];
+            var databasePath = configuration["TextEmbeddingAI:DatabasePath"];
 
-            if (string.IsNullOrWhiteSpace(modelId) || string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(endpoint))
+            if (string.IsNullOrWhiteSpace(modelId) || string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(databasePath))
             {
-                throw new InvalidOperationException("Missing AI configuration. Set TextEmbeddingAI:ModelId, TextEmbeddingAI:ApiKey, and TextEmbeddingAI:Endpoint.");
+                throw new InvalidOperationException("Missing AI configuration. Set TextEmbeddingAI:ModelId, TextEmbeddingAI:ApiKey, TextEmbeddingAI:Endpoint, and TextEmbeddingAI:DatabasePath.");
             }
 
 
@@ -32,27 +37,49 @@ namespace Softtek_APIExplorer_Backend.Services
             // Initialize the AzureOpenAIClient
             _embeddingClient = new(new Uri(endpoint), credential);
 
-        }
+            var fullDatabasePath = Path.IsPathRooted(databasePath)
+                ? databasePath
+                : Path.Combine(Directory.GetCurrentDirectory(), databasePath);
 
+            sqliteConnectionString = $"Data Source={fullDatabasePath};";
 
-        public async Task<VectorStoreCollection<Guid, ApiQueriesVectorStore>> CreateSQLiteDBConnection()
-        {
-            string connectionString = @"Data Source=C:\Users\505073150\Desktop\softtek\API-Explorer\Softtek-APIExplorer-Backend\\APIExplorer.db;";
-            if (string.IsNullOrWhiteSpace(connectionString))
+            if (string.IsNullOrWhiteSpace(sqliteConnectionString))
             {
-                throw new ArgumentException("Connection string is required.", nameof(connectionString));
+                throw new ArgumentException("Connection string is required.", nameof(sqliteConnectionString));
             }
 
             // create a vector store for the SQLite database
-            var vectorStore = new SqliteVectorStore(connectionString, new SqliteVectorStoreOptions
+            _sqliteVectorStore = new SqliteVectorStore(sqliteConnectionString, new SqliteVectorStoreOptions
             {
                 EmbeddingGenerator = _embeddingClient.GetEmbeddingClient(modelId).AsIEmbeddingGenerator()
             });
 
+        }
 
-            VectorStoreCollection<Guid, ApiQueriesVectorStore> vectorStoreCollection = vectorStore.GetCollection<Guid, ApiQueriesVectorStore>("knowledge_base");
 
-            return vectorStoreCollection;
+        public async Task<VectorStoreCollection<Guid, ApiQueriesVectorStore>> CreateSQLiteCollection(string collection = "knowledge_base")
+        {
+            if (_cachedVectorStoreCollection is not null)
+            {
+                return _cachedVectorStoreCollection;
+            }
+
+            await _collectionLock.WaitAsync();
+            try
+            {
+                if (_cachedVectorStoreCollection is not null)
+                {
+                    return _cachedVectorStoreCollection;
+                }
+
+                VectorStoreCollection<Guid, ApiQueriesVectorStore> vectorStoreCollection = _sqliteVectorStore.GetCollection<Guid, ApiQueriesVectorStore>(collection);
+                _cachedVectorStoreCollection = vectorStoreCollection;
+                return _cachedVectorStoreCollection;
+            }
+            finally
+            {
+                _collectionLock.Release();
+            }
         }
     }
 }
