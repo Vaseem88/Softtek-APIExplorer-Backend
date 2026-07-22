@@ -51,9 +51,14 @@ namespace Softtek_APIExplorer_Backend.Services
                         new ApiQueriesVectorStore
                         {
                             Id = Guid.NewGuid(),
-                            Verb = verb,
                             Endpoint = endpointWithDomain,
-                            Product = product
+                            Product = product,
+                            Method = verb,
+                            Summary = endpoint.Summary,
+                            Description = endpoint.Description,
+                            Parameters = string.Join(", ", endpoint.Parameters?.Select(p => p.ToString()).ToList() ?? new List<string>()),
+                            RequestSchemas = string.Join(", ", endpoint.RequestSchemas?.Select(s => s.ToString()).ToList() ?? new List<string>()),
+                            ResponseSchemas = string.Join(", ", endpoint.ResponseSchemas?.Select(s => s.ToString()).ToList() ?? new List<string>())
                         },
                         cancellationToken);
                 }

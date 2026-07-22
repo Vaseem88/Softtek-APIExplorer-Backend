@@ -31,7 +31,7 @@ builder.Services.AddScoped<IOpenApiSpecService, OpenApiSpecService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IExecutionProxyService, ExecutionProxyService>();
 builder.Services.AddScoped<ISemanticErrorService, SemanticErrorService>();
-builder.Services.AddScoped<AIService>();
+builder.Services.AddSingleton<AIService>();
 builder.Services.AddSingleton<TextEmbeddingAIService>();
 builder.Services.AddSingleton<IEnterpriseLlmClient, MockEnterpriseLlmClient>();
 

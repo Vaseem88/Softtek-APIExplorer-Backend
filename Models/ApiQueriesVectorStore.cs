@@ -7,9 +7,24 @@ namespace Softtek_APIExplorer_Backend.Models
     {
         [VectorStoreKey]
         public Guid Id { get; set; }
+        
+        [VectorStoreData]
+        public  string Method { get; init; }
 
         [VectorStoreData]
-        public string Verb { get; set; }
+        public string? Summary { get; init; }
+
+        [VectorStoreData]
+        public string? Description { get; init; }
+
+        [VectorStoreData]
+        public string Parameters { get; init; }
+
+        [VectorStoreData]
+        public string RequestSchemas { get; init; } 
+
+        [VectorStoreData]
+        public string ResponseSchemas { get; init; } 
 
         [VectorStoreData]
         public string Endpoint { get; set; }
@@ -18,7 +33,7 @@ namespace Softtek_APIExplorer_Backend.Models
         public string Product { get; set; }
 
         [VectorStoreVector(1536)]
-        public string Vector => $"{Verb}:{Product}:{Endpoint}";
+        public string Vector => $"{Method}:{Endpoint}";
 
     }
 
@@ -31,9 +46,10 @@ namespace Softtek_APIExplorer_Backend.Models
 
             await foreach (VectorSearchResult<ApiQueriesVectorStore> searchResult in vectorStore.SearchAsync(searchValue:input, top: numberOfSearchResults))
             {
-                string result = $"{searchResult.Record.Verb}:{searchResult.Record.Id}:{searchResult.Record.Product}:{searchResult.Record.Endpoint} ,";
+                string result = $"Endpoint: {searchResult.Record.Method} /{searchResult.Record.Endpoint}. Description: {searchResult.Record.Description} Parameters: {searchResult.Record.Parameters}. RequestSchemas: {searchResult.Record.RequestSchemas}. ResponseSchemas: {searchResult.Record.ResponseSchemas} ,";
                 mostSimilarknowledge.Append(result);
             }
+            Console.WriteLine(mostSimilarknowledge.ToString());
             return mostSimilarknowledge.ToString();
         }
     }

@@ -26,7 +26,7 @@ public sealed class ChatService : IChatService
             throw new AppException("Intent is required.", System.Net.HttpStatusCode.BadRequest);
         }
 
-        var result = await _aiService.RunKnowledgeBaseAgent(request.Intent);
+        var result = await _aiService.RunKnowledgeBaseAgent(request.SessionId, request.Intent, cancellationToken);
 
         //var systemPrompt = BuildSystemPrompt(session);
         //var response = await _llmClient.GenerateStructuredAsync<PlaygroundChatResponse>(
