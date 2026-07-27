@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.VectorData;
+using Microsoft.OpenApi.Services;
 using System.Text;
 
 namespace Softtek_APIExplorer_Backend.Models
@@ -10,6 +11,9 @@ namespace Softtek_APIExplorer_Backend.Models
         
         [VectorStoreData]
         public  string Method { get; init; }
+        
+        [VectorStoreData]
+        public string? BaseUrl { get; init; }
 
         [VectorStoreData]
         public string? Summary { get; init; }
@@ -33,7 +37,7 @@ namespace Softtek_APIExplorer_Backend.Models
         public string Product { get; set; }
 
         [VectorStoreVector(1536)]
-        public string Vector => $"{Method}:{Endpoint}";
+        public string Vector => $"Endpoint: {Method} {BaseUrl}/{Endpoint}. Description: {Description} Parameters: {Parameters}. RequestSchemas: {RequestSchemas}. ResponseSchemas: {ResponseSchemas} ";
 
     }
 
@@ -43,13 +47,17 @@ namespace Softtek_APIExplorer_Backend.Models
         {
             StringBuilder mostSimilarknowledge = new StringBuilder();
             int numberOfSearchResults = 3;
+            Console.WriteLine();
+            Console.WriteLine($"input: {input}");
+            Console.WriteLine("-----------------");
 
             await foreach (VectorSearchResult<ApiQueriesVectorStore> searchResult in vectorStore.SearchAsync(searchValue:input, top: numberOfSearchResults))
             {
-                string result = $"Endpoint: {searchResult.Record.Method} /{searchResult.Record.Endpoint}. Description: {searchResult.Record.Description} Parameters: {searchResult.Record.Parameters}. RequestSchemas: {searchResult.Record.RequestSchemas}. ResponseSchemas: {searchResult.Record.ResponseSchemas} ,";
+                string result = $"Endpoint: {searchResult.Record.Method} {searchResult.Record.BaseUrl}/{searchResult.Record.Endpoint}. Description: {searchResult.Record.Description} Parameters: {searchResult.Record.Parameters}. RequestSchemas: {searchResult.Record.RequestSchemas}. ResponseSchemas: {searchResult.Record.ResponseSchemas} ,";
                 mostSimilarknowledge.Append(result);
+                Console.WriteLine(result);
             }
-            Console.WriteLine(mostSimilarknowledge.ToString());
+            Console.WriteLine("-----------------");
             return mostSimilarknowledge.ToString();
         }
     }

@@ -8,11 +8,6 @@ namespace Softtek_APIExplorer_Backend.Services
     {
         public static async Task<bool> IngestData(VectorStoreCollection<Guid, ApiQueriesVectorStore> vectorStoreCollection, PlaygroundLoadResponse playgroundLoadResponse, CancellationToken cancellationToken = default)
         {
-            var isCollectionExists = await vectorStoreCollection.CollectionExistsAsync();
-            if (isCollectionExists)
-            {
-                return true;
-            }
             await vectorStoreCollection.EnsureCollectionDeletedAsync(cancellationToken);
             await vectorStoreCollection.EnsureCollectionExistsAsync(cancellationToken);
 
@@ -45,13 +40,12 @@ namespace Softtek_APIExplorer_Backend.Services
 
                 foreach (var domain in allowedDomains)
                 {
-                    var endpointWithDomain = $"{domain}{normalizedPath}";
-
                     await vectorStoreCollection.UpsertAsync(
                         new ApiQueriesVectorStore
                         {
                             Id = Guid.NewGuid(),
-                            Endpoint = endpointWithDomain,
+                            BaseUrl = domain,
+                            Endpoint = normalizedPath,
                             Product = product,
                             Method = verb,
                             Summary = endpoint.Summary,
