@@ -165,6 +165,19 @@ public sealed class AIService
 
         var vectorStoreCollection = await _textEmbeddingAIService.CreateSQLiteCollection();
 
+        // Configure the options for the TextSearchProvider.
+        TextSearchProviderOptions textSearchOptions = new()
+        {
+            SearchTime = TextSearchProviderOptions.TextSearchBehavior.BeforeAIInvoke,
+            RecentMessageMemoryLimit = 6
+        };
+
+        //return _azureClient.GetChatClient(modelId).AsAIAgent(
+        //    new ChatClientAgentOptions
+        //    {
+        //        ChatOptions = new() { Instructions = "You are a helpful support specialist. Answer questions using the provided context and cite the source document when available." },
+        //        AIContextProviders = [new TextSearchProvider(new SearchTool(vectorStoreCollection).SearchAdapter, textSearchOptions)]
+        //    });
         return _azureClient.GetChatClient(modelId).AsAIAgent(
             instructions: aiSystemInstructions,
             tools: [AIFunctionFactory.Create(new SearchTool(vectorStoreCollection).Search, "search_internal_kb")]

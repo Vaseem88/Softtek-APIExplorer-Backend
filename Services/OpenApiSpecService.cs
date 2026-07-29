@@ -1,21 +1,15 @@
-using System.Net;
-using System.Text;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.OpenApi.Models;
-using Microsoft.OpenApi.Readers;
-using Microsoft.OpenApi.Validations;
 using Softtek_APIExplorer_Backend.Exceptions;
 using Softtek_APIExplorer_Backend.Models;
+using System.Net;
+using System.Text;
+using System.Text.Json;
 
 namespace Softtek_APIExplorer_Backend.Services;
 
 public sealed class OpenApiSpecService : IOpenApiSpecService
 {
     private const string CachePrefix = "openapi-session:";
-    private static readonly OpenApiReaderSettings ReaderSettings = new()
-    {
-        RuleSet = ValidationRuleSet.GetEmptyRuleSet()
-    };
 
     private readonly IMemoryCache _memoryCache;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -29,7 +23,15 @@ public sealed class OpenApiSpecService : IOpenApiSpecService
     public async Task<PlaygroundLoadResponse> LoadAsync(PlaygroundLoadFormRequest request, CancellationToken cancellationToken)
     {
         var payload = await ReadPayloadAsync(request, cancellationToken);
-        var document = ParseDocument(payload);
+        var document = JsonSerializer.Deserialize<OpenApiSpecifications>(payload, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        });
+
+        if (document is null)
+        {
+            throw new AppException("Unable to parse OpenAPI specification.", HttpStatusCode.BadRequest);
+        }
 
         var endpoints = ExtractEndpoints(document);
         if (endpoints.Count == 0)
@@ -37,16 +39,7 @@ public sealed class OpenApiSpecService : IOpenApiSpecService
             throw new AppException("OpenAPI specification contains no paths.", HttpStatusCode.BadRequest);
         }
 
-        var serverUrls = document.Servers
-            .Select(s => s.Url)
-            .Where(url => !string.IsNullOrWhiteSpace(url))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        if (serverUrls.Count == 0 && !string.IsNullOrWhiteSpace(request.SwaggerUrl))
-        {
-            serverUrls.Add(request.SwaggerUrl.Trim());
-        }
+        var serverUrls = ExtractServerUrls(document, request.SwaggerUrl);
 
         var allowedDomains = serverUrls
             .Select(TryGetHost)
@@ -138,54 +131,29 @@ public sealed class OpenApiSpecService : IOpenApiSpecService
         return await reader.ReadToEndAsync(cancellationToken);
     }
 
-    private static OpenApiDocument ParseDocument(string rawPayload)
-    {
-        try
-        {
-            var openApiReader = new OpenApiStringReader(ReaderSettings);
-            var document = openApiReader.Read(rawPayload, out var diagnostic);
 
-            if (diagnostic?.Errors is { Count: > 0 })
-            {
-                var firstError = diagnostic.Errors[0].Message;
-                throw new AppException($"Malformed OpenAPI content. {firstError}", HttpStatusCode.BadRequest);
-            }
-
-            return document;
-        }
-        catch (AppException)
-        {
-            throw;
-        }
-        catch (Exception exception)
-        {
-            throw new AppException($"Malformed OpenAPI content. {exception.Message}", HttpStatusCode.BadRequest);
-        }
-    }
-
-    private static IReadOnlyCollection<OpenApiEndpointMetadata> ExtractEndpoints(OpenApiDocument document)
+    private static IReadOnlyCollection<OpenApiEndpointMetadata> ExtractEndpoints(OpenApiSpecifications document)
     {
         var endpoints = new List<OpenApiEndpointMetadata>();
 
         foreach (var pathItem in document.Paths)
         {
-            foreach (var operation in pathItem.Value.Operations)
+            foreach (var operation in GetOperations(pathItem.Value))
             {
-                var parameters = operation.Value.Parameters
-                    .Select(p => $"{p.Name} ({p.In}, required: {p.Required})")
+                var parameters = operation.Operation.Parameters
+                    .Select(p => BuildParameter(p))
                     .ToList();
 
-                var requestSchemas = operation.Value.RequestBody?.Content
-                    .Select(content => DescribeSchema(content.Value.Schema))
+                var requestSchemas = operation.Operation.Parameters
+                    .Where(p => string.Equals(p.In, "body", StringComparison.OrdinalIgnoreCase))
+                    .Select(p => DescribeSchema(document, p.Schema))
                     .Where(v => !string.IsNullOrWhiteSpace(v))
                     .Cast<string>()
                     .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList()
-                    ?? [];
+                    .ToList();
 
-                var responseSchemas = operation.Value.Responses
-                    .SelectMany(response => response.Value.Content)
-                    .Select(content => DescribeSchema(content.Value.Schema))
+                var responseSchemas = operation.Operation.Responses
+                    .Select(response => DescribeSchema(document, response.Value.Schema))
                     .Where(v => !string.IsNullOrWhiteSpace(v))
                     .Cast<string>()
                     .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -194,9 +162,9 @@ public sealed class OpenApiSpecService : IOpenApiSpecService
                 endpoints.Add(new OpenApiEndpointMetadata
                 {
                     Path = pathItem.Key,
-                    Method = operation.Key.ToString().ToUpperInvariant(),
-                    Summary = operation.Value.Summary,
-                    Description = operation.Value.Description,
+                    Method = operation.Method,
+                    Summary = operation.Operation.Summary,
+                    Description = operation.Operation.Description,
                     Parameters = parameters,
                     RequestSchemas = requestSchemas,
                     ResponseSchemas = responseSchemas
@@ -207,19 +175,128 @@ public sealed class OpenApiSpecService : IOpenApiSpecService
         return endpoints;
     }
 
-    private static string? DescribeSchema(OpenApiSchema? schema)
+    private static string BuildParameter(OpenApiParameter p)
+    {
+        StringBuilder result = new StringBuilder($"name: {p.Name} type: {p.Schema?.Type ?? p.Type} (in: {p.In}, required: {p.Required}, description: {p.Description})");
+        if(p.Items?.Enum != null && p.Items.Enum.Count > 0) {
+            result.Append($" (enum: {string.Join(", ", p.Items.Enum)})");
+        }
+
+        return result.ToString();
+    }
+
+    private static IReadOnlyCollection<string> ExtractServerUrls(OpenApiSpecifications document, string? swaggerUrl)
+    {
+        var serverUrls = new List<string>();
+
+        var host = document.Host?.Trim();
+        if (!string.IsNullOrWhiteSpace(host))
+        {
+            var basePath = string.IsNullOrWhiteSpace(document.BasePath)
+                ? string.Empty
+                : document.BasePath.StartsWith('/') ? document.BasePath : $"/{document.BasePath}";
+
+            var schemes = document.Schemes
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Select(s => s.Trim().ToLowerInvariant())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (schemes.Count == 0 && Uri.TryCreate(swaggerUrl, UriKind.Absolute, out var requestUri))
+            {
+                schemes.Add(requestUri.Scheme);
+            }
+
+            foreach (var scheme in schemes)
+            {
+                serverUrls.Add($"{scheme}://{host}{basePath}");
+            }
+        }
+
+        if (serverUrls.Count == 0 && !string.IsNullOrWhiteSpace(swaggerUrl))
+        {
+            serverUrls.Add(swaggerUrl.Trim());
+        }
+
+        return serverUrls.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static IReadOnlyCollection<(string Method, OpenApiOperation Operation)> GetOperations(OpenApiPathItem pathItem)
+    {
+        var operations = new List<(string Method, OpenApiOperation Operation)>();
+
+        if (pathItem.Get is not null) operations.Add(("GET", pathItem.Get));
+        if (pathItem.Put is not null) operations.Add(("PUT", pathItem.Put));
+        if (pathItem.Post is not null) operations.Add(("POST", pathItem.Post));
+        if (pathItem.Delete is not null) operations.Add(("DELETE", pathItem.Delete));
+        if (pathItem.Options is not null) operations.Add(("OPTIONS", pathItem.Options));
+        if (pathItem.Head is not null) operations.Add(("HEAD", pathItem.Head));
+        if (pathItem.Patch is not null) operations.Add(("PATCH", pathItem.Patch));
+
+        return operations;
+    }
+
+    private static string? DescribeSchema(OpenApiSpecifications document, OpenApiSpecificationSchema? schema, ISet<string>? visitedDefinitions = null)
     {
         if (schema is null)
         {
             return null;
         }
 
-        if (schema.Reference?.Id is not null)
+        if (!string.IsNullOrWhiteSpace(schema.Ref))
         {
-            return schema.Reference.Id;
+            var definitionKey = TryGetDefinitionKey(schema.Ref);
+            if (!string.IsNullOrWhiteSpace(definitionKey) && document.Definitions.TryGetValue(definitionKey, out var definition))
+            {
+                visitedDefinitions ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                if (!visitedDefinitions.Add(definitionKey))
+                {
+                    return definitionKey;
+                }
+
+                return DescribeSchema(document, definition, visitedDefinitions);
+            }
+
+            return schema.Ref;
+        }
+
+        if (string.Equals(schema.Type, "array", StringComparison.OrdinalIgnoreCase))
+        {
+            var itemDescription = DescribeSchema(document, schema.Items, visitedDefinitions) ?? "object";
+            return $"array<{itemDescription}>";
+        }
+
+        if (string.Equals(schema.Type, "object", StringComparison.OrdinalIgnoreCase) && schema.Properties.Count > 0)
+        {
+            var properties = schema.Properties
+                .Select(p => FormatPropertySchema(document, visitedDefinitions, p));
+            return $"object{{{string.Join(", ", properties)}}}";
         }
 
         return schema.Type;
+    }
+
+    private static string FormatPropertySchema(OpenApiSpecifications document, ISet<string>? visitedDefinitions, KeyValuePair<string, OpenApiSpecificationSchema> p)
+    {
+        StringBuilder result = new StringBuilder($"{p.Key}: {DescribeSchema(document, p.Value, visitedDefinitions) ?? "object"}");
+        if (p.Value.Description != null) { 
+            result.Append($" (description: {p.Value.Description})");
+        }
+        if(p.Value.Enum != null && p.Value.Enum.Count > 0) {
+            result.Append($" (enum: {string.Join(", ", p.Value.Enum)})");
+        }
+        return result.ToString();
+    }
+
+    private static string? TryGetDefinitionKey(string reference)
+    {
+        const string definitionPrefix = "#/definitions/";
+        if (!reference.StartsWith(definitionPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return reference[definitionPrefix.Length..];
     }
 
     private static string GetCacheKey(string sessionId) => $"{CachePrefix}{sessionId}";

@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.VectorData;
+﻿using Microsoft.Agents.AI;
+using Microsoft.Extensions.VectorData;
 using Microsoft.OpenApi.Services;
 using System.Text;
 
@@ -37,7 +38,7 @@ namespace Softtek_APIExplorer_Backend.Models
         public string Product { get; set; }
 
         [VectorStoreVector(1536)]
-        public string Vector => $"Endpoint: {Method} {BaseUrl}/{Endpoint}. Description: {Description} Parameters: {Parameters}. RequestSchemas: {RequestSchemas}. ResponseSchemas: {ResponseSchemas} ";
+        public string Vector => $"Endpoint: {Method} {BaseUrl}/{Endpoint}. Description: {Description}, Summary: {Summary} Parameters: {Parameters}. RequestSchemas: {RequestSchemas}. ResponseSchemas: {ResponseSchemas} ";
 
     }
 
@@ -46,19 +47,70 @@ namespace Softtek_APIExplorer_Backend.Models
         public async Task<string> Search(string input)
         {
             StringBuilder mostSimilarknowledge = new StringBuilder();
-            int numberOfSearchResults = 3;
+            int numberOfSearchResults = 2;
             Console.WriteLine();
             Console.WriteLine($"input: {input}");
             Console.WriteLine("-----------------");
 
             await foreach (VectorSearchResult<ApiQueriesVectorStore> searchResult in vectorStore.SearchAsync(searchValue:input, top: numberOfSearchResults))
             {
-                string result = $"Endpoint: {searchResult.Record.Method} {searchResult.Record.BaseUrl}/{searchResult.Record.Endpoint}. Description: {searchResult.Record.Description} Parameters: {searchResult.Record.Parameters}. RequestSchemas: {searchResult.Record.RequestSchemas}. ResponseSchemas: {searchResult.Record.ResponseSchemas} ,";
+                string result = BuildSearchResultText(searchResult);
                 mostSimilarknowledge.Append(result);
+                Console.WriteLine();
                 Console.WriteLine(result);
             }
             Console.WriteLine("-----------------");
             return mostSimilarknowledge.ToString();
         }
+
+        private static string BuildSearchResultText(VectorSearchResult<ApiQueriesVectorStore> searchResult)
+        {
+            StringBuilder result = new StringBuilder($"Endpoint: {searchResult.Record.Method} {searchResult.Record.BaseUrl}/{searchResult.Record.Endpoint}.");
+            if (!string.IsNullOrEmpty(searchResult.Record.Description))
+            {
+                result.Append($" Description: {searchResult.Record.Description}");
+            }
+            if (!string.IsNullOrEmpty(searchResult.Record.Summary))
+            {
+                result.Append($" Summary: {searchResult.Record.Summary}");
+            }
+            if (!string.IsNullOrEmpty(searchResult.Record.Parameters))
+            {
+                result.Append($" Parameters: {searchResult.Record.Parameters}.");
+            }
+            if (!string.IsNullOrEmpty(searchResult.Record.RequestSchemas))
+            {
+                result.Append($" RequestSchemas: {searchResult.Record.RequestSchemas}.");
+            }
+            if (!string.IsNullOrEmpty(searchResult.Record.ResponseSchemas))
+            {
+                result.Append($" ResponseSchemas: {searchResult.Record.ResponseSchemas}.");
+            }
+            return result.ToString();
+        }
+
+        public  async Task<IEnumerable<TextSearchProvider.TextSearchResult>> SearchAdapter(string query, CancellationToken cancellationToken)
+        {
+            // The mock search inspects the user's question and returns pre-defined snippets
+            // that resemble documents stored in an external knowledge source.
+            List<TextSearchProvider.TextSearchResult> results = new();
+            Console.WriteLine();
+            Console.WriteLine($"input: {query}");
+            Console.WriteLine("-----------------");
+
+            await foreach (VectorSearchResult<ApiQueriesVectorStore> searchResult in vectorStore.SearchAsync(searchValue: query, top: 3))
+            {
+                string result = $"Endpoint: {searchResult.Record.Method} {searchResult.Record.BaseUrl}/{searchResult.Record.Endpoint}. Description: {searchResult.Record.Description} Parameters: {searchResult.Record.Parameters}. RequestSchemas: {searchResult.Record.RequestSchemas}. ResponseSchemas: {searchResult.Record.ResponseSchemas} ,";
+                Console.WriteLine(result);
+                results.Add(new()
+                {
+                    Text = result
+                });
+            }
+            Console.WriteLine("-----------------");
+
+            return results;
+        }
+
     }
 }
