@@ -1,6 +1,7 @@
 ﻿using Microsoft.Agents.AI;
 using Microsoft.Extensions.VectorData;
 using Microsoft.OpenApi.Services;
+using System.ComponentModel;
 using System.Text;
 
 namespace Softtek_APIExplorer_Backend.Models
@@ -44,12 +45,19 @@ namespace Softtek_APIExplorer_Backend.Models
 
     public class SearchTool(VectorStoreCollection<Guid, ApiQueriesVectorStore> vectorStore)
     {
-        public async Task<string> Search(string input)
+        private const int DefaultNumberOfSearchResults = 2;
+        private const int MinNumberOfSearchResults = 1;
+        private const int MaxNumberOfSearchResults = 8;
+
+        public async Task<string> Search(
+            [Description("The natural language query to search in the internal API knowledge base.")] string input,
+            [Description("Optional number of results to retrieve. The value is clamped between 1 and 8.")] int? topK = null)
         {
             StringBuilder mostSimilarknowledge = new StringBuilder();
-            int numberOfSearchResults = 2;
+            int numberOfSearchResults = Math.Clamp(topK ?? DefaultNumberOfSearchResults, MinNumberOfSearchResults, MaxNumberOfSearchResults);
             Console.WriteLine();
             Console.WriteLine($"input: {input}");
+            Console.WriteLine($"topK: {numberOfSearchResults}");
             Console.WriteLine("-----------------");
 
             await foreach (VectorSearchResult<ApiQueriesVectorStore> searchResult in vectorStore.SearchAsync(searchValue:input, top: numberOfSearchResults))
@@ -65,7 +73,17 @@ namespace Softtek_APIExplorer_Backend.Models
 
         private static string BuildSearchResultText(VectorSearchResult<ApiQueriesVectorStore> searchResult)
         {
-            StringBuilder result = new StringBuilder($"Endpoint: {searchResult.Record.Method} {searchResult.Record.BaseUrl}/{searchResult.Record.Endpoint}.");
+            StringBuilder result = new StringBuilder();
+
+            if (!string.IsNullOrEmpty(searchResult.Record.Endpoint))
+            {
+                result.Append($"Endpoint: {searchResult.Record.Method} {searchResult.Record.BaseUrl}/{searchResult.Record.Endpoint}.");
+            }
+            else
+            {
+                result.Append($"BaseUrl: {searchResult.Record.BaseUrl} Resource: {searchResult.Record.Product} ");
+            }
+
             if (!string.IsNullOrEmpty(searchResult.Record.Description))
             {
                 result.Append($" Description: {searchResult.Record.Description}");

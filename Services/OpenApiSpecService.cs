@@ -52,6 +52,7 @@ public sealed class OpenApiSpecService : IOpenApiSpecService
         {
             throw new AppException("No valid server domain could be inferred from the specification.", HttpStatusCode.BadRequest);
         }
+        var resources = ExtractResources(document);
 
         var sessionId = string.IsNullOrWhiteSpace(request.SessionId) ? Guid.NewGuid().ToString("N") : request.SessionId.Trim();
         var context = new OpenApiSessionContext
@@ -59,6 +60,7 @@ public sealed class OpenApiSpecService : IOpenApiSpecService
             SessionId = sessionId,
             AllowedDomains = allowedDomains,
             ServerUrls = serverUrls,
+            Resources = resources,
             Endpoints = endpoints,
             LoadedAtUtc = DateTimeOffset.UtcNow
         };
@@ -74,8 +76,20 @@ public sealed class OpenApiSpecService : IOpenApiSpecService
             SessionId = context.SessionId,
             EndpointCount = context.Endpoints.Count,
             AllowedDomains = context.AllowedDomains,
+            Resources = context.Resources,
             Endpoints = context.Endpoints
         };
+    }
+
+    private static IReadOnlyCollection<OverviewData> ExtractResources(OpenApiSpecifications document)
+    {
+        return document.Tags
+            .Select(tag => new OverviewData
+            {
+                Name = tag.Name,
+                Description = tag.Description
+            })
+            .ToList();
     }
 
     public OpenApiSessionContext GetRequiredSession(string sessionId)
