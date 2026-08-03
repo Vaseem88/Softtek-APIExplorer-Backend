@@ -47,7 +47,7 @@ namespace Softtek_APIExplorer_Backend.Models
     {
         private const int DefaultNumberOfSearchResults = 2;
         private const int MinNumberOfSearchResults = 1;
-        private const int MaxNumberOfSearchResults = 8;
+        private const int MaxNumberOfSearchResults = 10;
 
         public async Task<string> Search(
             [Description("The natural language query to search in the internal API knowledge base.")] string input,

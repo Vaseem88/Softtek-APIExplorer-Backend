@@ -25,6 +25,8 @@ namespace Softtek_APIExplorer_Backend.Services
                     return false;
                 }
 
+                Dictionary<string, int> productCounts = new Dictionary<string, int>();
+
                 foreach (var endpoint in playgroundLoadResponse.Endpoints)
                 {
                     if (string.IsNullOrWhiteSpace(endpoint.Path) || string.IsNullOrWhiteSpace(endpoint.Method))
@@ -43,21 +45,30 @@ namespace Softtek_APIExplorer_Backend.Services
 
                     foreach (var domain in allowedDomains)
                     {
-                        await vectorStoreCollection.UpsertAsync(
-                            new ApiQueriesVectorStore
-                            {
-                                Id = Guid.NewGuid(),
-                                BaseUrl = domain,
-                                Endpoint = normalizedPath,
-                                Product = product,
-                                Method = verb,
-                                Summary = endpoint.Summary,
-                                Description = endpoint.Description,
-                                Parameters = string.Join(", ", endpoint.Parameters?.Select(p => p.ToString()).ToList() ?? new List<string>()),
-                                RequestSchemas = string.Join(", ", endpoint.RequestSchemas?.Select(s => s.ToString()).ToList() ?? new List<string>()),
-                                ResponseSchemas = string.Join(", ", endpoint.ResponseSchemas?.Select(s => s.ToString()).ToList() ?? new List<string>())
-                            },
-                            cancellationToken);
+                        if (productCounts.ContainsKey(product))
+                        {
+                            productCounts[product]++;
+                        }
+                        else
+                        {
+                            productCounts.Add(product, 1);
+                        }
+
+                            await vectorStoreCollection.UpsertAsync(
+                                new ApiQueriesVectorStore
+                                {
+                                    Id = Guid.NewGuid(),
+                                    BaseUrl = domain,
+                                    Endpoint = normalizedPath,
+                                    Product = product,
+                                    Method = verb,
+                                    Summary = endpoint.Summary,
+                                    Description = endpoint.Description,
+                                    Parameters = string.Join(", ", endpoint.Parameters?.Select(p => p.ToString()).ToList() ?? new List<string>()),
+                                    RequestSchemas = string.Join(", ", endpoint.RequestSchemas?.Select(s => s.ToString()).ToList() ?? new List<string>()),
+                                    ResponseSchemas = string.Join(", ", endpoint.ResponseSchemas?.Select(s => s.ToString()).ToList() ?? new List<string>())
+                                },
+                                cancellationToken);
                     }
                 }
 
@@ -66,6 +77,7 @@ namespace Softtek_APIExplorer_Backend.Services
 
                     foreach (var domain in allowedDomains)
                     {
+                        
                         await vectorStoreCollection.UpsertAsync(
                             new ApiQueriesVectorStore
                             {
@@ -73,7 +85,7 @@ namespace Softtek_APIExplorer_Backend.Services
                                 BaseUrl = domain,
                                 Product = resource?.Name,
                                 Summary = resource?.Description,
-                                Description = $"Overview of {resource.Name}",
+                                Description = $"Overview of {resource.Name} and total count of {resource.Name} API endpoints available in knowledge base is: {productCounts[resource.Name]}",
                                 Endpoint = string.Empty,
                                 Method = string.Empty,
                                 Parameters = string.Empty,
