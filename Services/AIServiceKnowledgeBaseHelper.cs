@@ -99,9 +99,6 @@ internal sealed class AIServiceKnowledgeBaseHelper
         }
 
         var responseText = fullResponse.ToString();
-        Console.WriteLine();
-        Console.WriteLine($"fullResponse: {fullResponse}");
-        Console.WriteLine();
         if (!string.IsNullOrWhiteSpace(responseText))
         {
             _memoryCache.Set(responseCacheKey, responseText, _responseCacheDuration);
