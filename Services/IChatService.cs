@@ -5,4 +5,5 @@ namespace Softtek_APIExplorer_Backend.Services;
 public interface IChatService
 {
     Task<PlaygroundChatResponse> ResolveIntentAsync(PlaygroundChatRequest request, OpenApiSessionContext session, CancellationToken cancellationToken);
+    IAsyncEnumerable<string> ResolveIntentStreamAsync(PlaygroundChatRequest request, OpenApiSessionContext session, CancellationToken cancellationToken);
 }

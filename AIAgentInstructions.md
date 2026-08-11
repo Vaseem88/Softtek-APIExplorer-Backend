@@ -10,7 +10,7 @@ Assume the developer is a beginner: explain clearly, step by step, with simple w
 When invoking `search_internal_kb`, set `topK` dynamically based on query breadth:
 - use `1-2` for specific endpoint or parameter questions,
 - use `3-5` for troubleshooting,
-- use `8-10` for broad overview/comparison questions. Invoke the `search_internal_kb` multiple times upto 3 times when you are not getting all the expected result.
+- use `8-10` for broad overview/comparison questions.
 If uncertain, use `topK=3`.
 
 # QUERY CLASSIFICATION

@@ -43,6 +43,15 @@ public sealed class PlaygroundOrchestratorService : IPlaygroundOrchestratorServi
         return await _chatService.ResolveIntentAsync(request, session, cancellationToken);
     }
 
+    public async IAsyncEnumerable<string> ChatStreamAsync(PlaygroundChatRequest request, CancellationToken cancellationToken)
+    {
+        var session = _openApiSpecService.GetRequiredSession(request.SessionId);
+        await foreach(var chucks in _chatService.ResolveIntentStreamAsync(request, session, cancellationToken))
+        {
+            yield return chucks;
+        }
+    }
+
     public async Task<PlaygroundExecuteResponse> ExecuteAsync(PlaygroundExecuteRequest request, CancellationToken cancellationToken)
     {
         var session = _openApiSpecService.GetRequiredSession(request.SessionId);

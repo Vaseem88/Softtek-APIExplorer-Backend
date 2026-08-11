@@ -40,6 +40,22 @@ public sealed class ChatService : IChatService
         };
     }
 
+    public async IAsyncEnumerable<string> ResolveIntentStreamAsync(
+        PlaygroundChatRequest request,
+        OpenApiSessionContext session,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Intent))
+        {
+            throw new AppException("Intent is required.", System.Net.HttpStatusCode.BadRequest);
+        }
+
+        await foreach(var chucks in _aiService.RunKnowledgeBaseStreamAgent(request.SessionId, request.Intent, cancellationToken))
+        {
+            yield return chucks;
+        }
+    }
+
     private static string BuildSystemPrompt(OpenApiSessionContext session)
     {
         var endpointContext = session.Endpoints
