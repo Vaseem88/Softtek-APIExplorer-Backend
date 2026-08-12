@@ -7,4 +7,6 @@ public sealed class PlaygroundLoadResponse
     public required IReadOnlyCollection<string> AllowedDomains { get; init; }
     public required IReadOnlyCollection<OverviewData> Resources { get; init; }
     public required IReadOnlyCollection<OpenApiEndpointMetadata> Endpoints { get; init; }
+
+    public OpenApiInfo? openApiInfo { get; set; }
 }

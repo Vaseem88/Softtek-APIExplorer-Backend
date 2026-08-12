@@ -38,8 +38,11 @@ namespace Softtek_APIExplorer_Backend.Models
         [VectorStoreData]
         public string Product { get; set; }
 
+        [VectorStoreData]
+        public string? AuthKey { get; set; }
+
         [VectorStoreVector(1536)]
-        public string Vector => $"Endpoint: {Method} {BaseUrl}/{Endpoint}. Description: {Description}, Summary: {Summary} Parameters: {Parameters}. RequestSchemas: {RequestSchemas}. ResponseSchemas: {ResponseSchemas} ";
+        public string Vector => $"Endpoint: {Method} {BaseUrl}/{Endpoint}. Description: {Description}, Summary: {Summary} Parameters: {Parameters}. RequestSchemas: {RequestSchemas}. ResponseSchemas: {ResponseSchemas}. AuthKey: {AuthKey} ";
 
     }
 
@@ -103,6 +106,10 @@ namespace Softtek_APIExplorer_Backend.Models
             if (!string.IsNullOrEmpty(searchResult.Record.ResponseSchemas))
             {
                 result.Append($" ResponseSchemas: {searchResult.Record.ResponseSchemas}.");
+            }
+            if (!string.IsNullOrEmpty(searchResult.Record.AuthKey))
+            {
+                result.Append($" AuthKey: {searchResult.Record.AuthKey}.");
             }
             return result.ToString();
         }

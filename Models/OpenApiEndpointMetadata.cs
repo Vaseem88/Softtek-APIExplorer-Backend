@@ -9,4 +9,5 @@ public sealed class OpenApiEndpointMetadata
     public IReadOnlyCollection<string> Parameters { get; init; } = [];
     public IReadOnlyCollection<string> RequestSchemas { get; init; } = [];
     public IReadOnlyCollection<string> ResponseSchemas { get; init; } = [];
+    public IReadOnlyCollection<string> AuthKey { get; init; } = [];
 }

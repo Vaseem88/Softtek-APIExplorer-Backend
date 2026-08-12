@@ -27,6 +27,7 @@ namespace Softtek_APIExplorer_Backend.Services
 
                 Dictionary<string, int> productCounts = new Dictionary<string, int>();
 
+                // Insert Endpoints into the vector store
                 foreach (var endpoint in playgroundLoadResponse.Endpoints)
                 {
                     if (string.IsNullOrWhiteSpace(endpoint.Path) || string.IsNullOrWhiteSpace(endpoint.Method))
@@ -66,12 +67,15 @@ namespace Softtek_APIExplorer_Backend.Services
                                     Description = endpoint.Description,
                                     Parameters = string.Join(", ", endpoint.Parameters?.Select(p => p.ToString()).ToList() ?? new List<string>()),
                                     RequestSchemas = string.Join(", ", endpoint.RequestSchemas?.Select(s => s.ToString()).ToList() ?? new List<string>()),
-                                    ResponseSchemas = string.Join(", ", endpoint.ResponseSchemas?.Select(s => s.ToString()).ToList() ?? new List<string>())
+                                    ResponseSchemas = string.Join(", ", endpoint.ResponseSchemas?.Select(s => s.ToString()).ToList() ?? new List<string>()),
+                                    AuthKey = string.Join(", ", endpoint.AuthKey?.Select(k => k.ToString()).ToList() ?? new List<string>()),
+
                                 },
                                 cancellationToken);
                     }
                 }
 
+                // Insert Resources into the vector store
                 foreach (var resource in playgroundLoadResponse.Resources)
                 {
 
@@ -95,8 +99,31 @@ namespace Softtek_APIExplorer_Backend.Services
                             cancellationToken);
                     }
                 }
+
+                // Insert OpenApiInfo into the vector store
+                if (playgroundLoadResponse.openApiInfo != null)
+                {
+                    foreach (var domain in allowedDomains)
+                    {
+                        await vectorStoreCollection.UpsertAsync(
+                            new ApiQueriesVectorStore
+                            {
+                                Id = Guid.NewGuid(),
+                                BaseUrl = domain,
+                                Product = $"OpenAPI Info: Version {playgroundLoadResponse.openApiInfo.Version}",
+                                Summary = playgroundLoadResponse.openApiInfo.Title,
+                                Description = $"Overview - {playgroundLoadResponse.openApiInfo.Description}",
+                                Endpoint = string.Empty,
+                                Method = string.Empty,
+                                Parameters = string.Empty,
+                                RequestSchemas = string.Empty,
+                                ResponseSchemas = string.Empty,
+                            },
+                            cancellationToken);
+                    }
+                }
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 throw ex;
             }

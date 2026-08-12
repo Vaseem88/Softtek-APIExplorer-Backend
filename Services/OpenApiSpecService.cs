@@ -77,7 +77,8 @@ public sealed class OpenApiSpecService : IOpenApiSpecService
             EndpointCount = context.Endpoints.Count,
             AllowedDomains = context.AllowedDomains,
             Resources = context.Resources,
-            Endpoints = context.Endpoints
+            Endpoints = context.Endpoints,
+            openApiInfo = document.Info
         };
     }
 
@@ -173,6 +174,11 @@ public sealed class OpenApiSpecService : IOpenApiSpecService
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToList();
 
+                var authKeys = operation.Operation.Security
+                    .Select(s => FetchSecurityScopes(s.Keys, s.Values))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
                 endpoints.Add(new OpenApiEndpointMetadata
                 {
                     Path = pathItem.Key,
@@ -181,12 +187,24 @@ public sealed class OpenApiSpecService : IOpenApiSpecService
                     Description = operation.Operation.Description,
                     Parameters = parameters,
                     RequestSchemas = requestSchemas,
-                    ResponseSchemas = responseSchemas
+                    ResponseSchemas = responseSchemas,
+                    AuthKey = authKeys
                 });
             }
         }
 
         return endpoints;
+    }
+
+    private static string FetchSecurityScopes(IEnumerable<string> keys, IEnumerable<IReadOnlyCollection<string>> values)
+    {
+        StringBuilder authScopes = new StringBuilder(string.Join(',', keys));
+
+        if (values.Any() && values.SelectMany(s => s).Any())
+        {
+            authScopes.Append($" Scopes: {string.Join(',', values.SelectMany(s=>s))}");
+        }
+        return authScopes.ToString();
     }
 
     private static string BuildParameter(OpenApiParameter p)
