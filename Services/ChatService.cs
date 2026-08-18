@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Net;
 using Softtek_APIExplorer_Backend.Exceptions;
 using Softtek_APIExplorer_Backend.Models;
 
@@ -21,23 +22,34 @@ public sealed class ChatService : IChatService
         OpenApiSessionContext session,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.Intent))
+        try
         {
-            throw new AppException("Intent is required.", System.Net.HttpStatusCode.BadRequest);
+            if (string.IsNullOrWhiteSpace(request.Intent))
+            {
+                throw new AppException("Intent is required.", HttpStatusCode.BadRequest);
+            }
+
+            var result = await _aiService.RunKnowledgeBaseAgent(request.SessionId, request.Intent, cancellationToken);
+
+            //var systemPrompt = BuildSystemPrompt(session);
+            //var response = await _llmClient.GenerateStructuredAsync<PlaygroundChatResponse>(
+            //    systemPrompt,
+            //    request.Intent,
+            //    cancellationToken);
+
+            return new PlaygroundChatResponse
+            {
+                Explanation = result
+            };
         }
-
-        var result = await _aiService.RunKnowledgeBaseAgent(request.SessionId, request.Intent, cancellationToken);
-
-        //var systemPrompt = BuildSystemPrompt(session);
-        //var response = await _llmClient.GenerateStructuredAsync<PlaygroundChatResponse>(
-        //    systemPrompt,
-        //    request.Intent,
-        //    cancellationToken);
-
-        return new PlaygroundChatResponse
+        catch (AppException)
         {
-            Explanation = result
-        };
+            throw;
+        }
+        catch (Exception)
+        {
+            throw new AppException("Failed to resolve chat intent.", HttpStatusCode.InternalServerError);
+        }
     }
 
     public async IAsyncEnumerable<string> ResolveIntentStreamAsync(

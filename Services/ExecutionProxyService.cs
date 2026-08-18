@@ -21,54 +21,62 @@ public sealed class ExecutionProxyService : IExecutionProxyService
         OpenApiSessionContext session,
         CancellationToken cancellationToken)
     {
-
-
-
-        if (string.IsNullOrWhiteSpace(request.Method))
+        try
         {
-            throw new AppException("Method is required.", HttpStatusCode.BadRequest);
-        }
-
-        var targetUri = BuildTargetUri(request, session);
-        ValidateTargetHost(targetUri, session);
-        ValidatePathAndMethod(request, targetUri, session);
-
-        using var message = new HttpRequestMessage(new HttpMethod(request.Method.ToUpperInvariant()), targetUri);
-
-        if (request.Headers is not null)
-        {
-            foreach (var header in request.Headers)
+            if (string.IsNullOrWhiteSpace(request.Method))
             {
-                _ = message.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                throw new AppException("Method is required.", HttpStatusCode.BadRequest);
             }
+
+            var targetUri = BuildTargetUri(request, session);
+            ValidateTargetHost(targetUri, session);
+            ValidatePathAndMethod(request, targetUri, session);
+
+            using var message = new HttpRequestMessage(new HttpMethod(request.Method.ToUpperInvariant()), targetUri);
+
+            if (request.Headers is not null)
+            {
+                foreach (var header in request.Headers)
+                {
+                    _ = message.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                }
+            }
+
+            if (request.Body is not null && request.Body.Value.ValueKind != System.Text.Json.JsonValueKind.Undefined)
+            {
+                message.Content = new StringContent(request.Body.Value.GetRawText(), Encoding.UTF8, "application/json");
+            }
+
+            var client = _httpClientFactory.CreateClient("PlaygroundProxyClient");
+            using var response = await client.SendAsync(message, cancellationToken);
+
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            var responseHeaders = response.Headers
+                .Concat(response.Content.Headers)
+                .ToDictionary(h => h.Key, h => string.Join(",", h.Value), StringComparer.OrdinalIgnoreCase);
+
+            string? semanticError = null;
+            if ((int)response.StatusCode >= 400)
+            {
+                semanticError = await _semanticErrorService.ExplainAsync(responseBody, session, cancellationToken);
+            }
+
+            return new PlaygroundExecuteResponse
+            {
+                StatusCode = response.StatusCode,
+                ResponseBody = responseBody,
+                ResponseHeaders = responseHeaders,
+                SemanticErrorExplanation = semanticError
+            };
         }
-
-        if (request.Body is not null && request.Body.Value.ValueKind != System.Text.Json.JsonValueKind.Undefined)
+        catch (AppException)
         {
-            message.Content = new StringContent(request.Body.Value.GetRawText(), Encoding.UTF8, "application/json");
+            throw;
         }
-
-        var client = _httpClientFactory.CreateClient("PlaygroundProxyClient");
-        using var response = await client.SendAsync(message, cancellationToken);
-
-        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-        var responseHeaders = response.Headers
-            .Concat(response.Content.Headers)
-            .ToDictionary(h => h.Key, h => string.Join(",", h.Value), StringComparer.OrdinalIgnoreCase);
-
-        string? semanticError = null;
-        if ((int)response.StatusCode >= 400)
+        catch (Exception)
         {
-            semanticError = await _semanticErrorService.ExplainAsync(responseBody, session, cancellationToken);
+            throw new AppException("Failed to execute downstream API request.", HttpStatusCode.InternalServerError);
         }
-
-        return new PlaygroundExecuteResponse
-        {
-            StatusCode = response.StatusCode,
-            ResponseBody = responseBody,
-            ResponseHeaders = responseHeaders,
-            SemanticErrorExplanation = semanticError
-        };
     }
 
     private static Uri BuildTargetUri(PlaygroundExecuteRequest request, OpenApiSessionContext session)

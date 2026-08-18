@@ -4,6 +4,7 @@ using Softtek_APIExplorer_Backend.Models;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Softtek_APIExplorer_Backend.Services;
 
@@ -22,64 +23,75 @@ public sealed class OpenApiSpecService : IOpenApiSpecService
 
     public async Task<PlaygroundLoadResponse> LoadAsync(PlaygroundLoadFormRequest request, CancellationToken cancellationToken)
     {
-        var payload = await ReadPayloadAsync(request, cancellationToken);
-        var document = JsonSerializer.Deserialize<OpenApiSpecifications>(payload, new JsonSerializerOptions
+        try
         {
-            PropertyNameCaseInsensitive = true
-        });
+            var payload = await ReadPayloadAsync(request, cancellationToken);
+            var document = JsonSerializer.Deserialize<OpenApiSpecifications>(payload, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
 
-        if (document is null)
-        {
-            throw new AppException("Unable to parse OpenAPI specification.", HttpStatusCode.BadRequest);
+            if (document is null)
+            {
+                throw new AppException("Unable to parse OpenAPI specification.", HttpStatusCode.BadRequest);
+            }
+
+            var endpoints = ExtractEndpoints(document);
+            if (endpoints.Count == 0)
+            {
+                throw new AppException("OpenAPI specification contains no paths.", HttpStatusCode.BadRequest);
+            }
+
+            var serverUrls = ExtractServerUrls(document, request.SwaggerUrl);
+
+            var allowedDomains = serverUrls
+                .Select(TryGetHost)
+                .Where(h => !string.IsNullOrWhiteSpace(h))
+                .Cast<string>()
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (allowedDomains.Count == 0)
+            {
+                throw new AppException("No valid server domain could be inferred from the specification.", HttpStatusCode.BadRequest);
+            }
+            var resources = ExtractResources(document);
+
+            var sessionId = string.IsNullOrWhiteSpace(request.SessionId) ? Guid.NewGuid().ToString("N") : request.SessionId.Trim();
+            var context = new OpenApiSessionContext
+            {
+                SessionId = sessionId,
+                AllowedDomains = allowedDomains,
+                ServerUrls = serverUrls,
+                Resources = resources,
+                Endpoints = endpoints,
+                LoadedAtUtc = DateTimeOffset.UtcNow
+            };
+
+            _memoryCache.Set(GetCacheKey(sessionId), context, new MemoryCacheEntryOptions
+            {
+                SlidingExpiration = TimeSpan.FromHours(2),
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(12)
+            });
+
+            return new PlaygroundLoadResponse
+            {
+                SessionId = context.SessionId,
+                EndpointCount = context.Endpoints.Count,
+                AllowedDomains = context.AllowedDomains,
+                Resources = context.Resources,
+                Endpoints = context.Endpoints,
+                openApiInfo = document.Info
+            };
         }
-
-        var endpoints = ExtractEndpoints(document);
-        if (endpoints.Count == 0)
+        catch (AppException)
         {
-            throw new AppException("OpenAPI specification contains no paths.", HttpStatusCode.BadRequest);
+            throw;
         }
-
-        var serverUrls = ExtractServerUrls(document, request.SwaggerUrl);
-
-        var allowedDomains = serverUrls
-            .Select(TryGetHost)
-            .Where(h => !string.IsNullOrWhiteSpace(h))
-            .Cast<string>()
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        if (allowedDomains.Count == 0)
+        catch (Exception)
         {
-            throw new AppException("No valid server domain could be inferred from the specification.", HttpStatusCode.BadRequest);
+            throw new AppException("Failed to load and parse OpenAPI specification.", HttpStatusCode.InternalServerError);
         }
-        var resources = ExtractResources(document);
-
-        var sessionId = string.IsNullOrWhiteSpace(request.SessionId) ? Guid.NewGuid().ToString("N") : request.SessionId.Trim();
-        var context = new OpenApiSessionContext
-        {
-            SessionId = sessionId,
-            AllowedDomains = allowedDomains,
-            ServerUrls = serverUrls,
-            Resources = resources,
-            Endpoints = endpoints,
-            LoadedAtUtc = DateTimeOffset.UtcNow
-        };
-
-        _memoryCache.Set(GetCacheKey(sessionId), context, new MemoryCacheEntryOptions
-        {
-            SlidingExpiration = TimeSpan.FromHours(2),
-            AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(12)
-        });
-
-        return new PlaygroundLoadResponse
-        {
-            SessionId = context.SessionId,
-            EndpointCount = context.Endpoints.Count,
-            AllowedDomains = context.AllowedDomains,
-            Resources = context.Resources,
-            Endpoints = context.Endpoints,
-            openApiInfo = document.Info
-        };
     }
 
     private static IReadOnlyCollection<OverviewData> ExtractResources(OpenApiSpecifications document)
@@ -110,40 +122,200 @@ public sealed class OpenApiSpecService : IOpenApiSpecService
 
     private async Task<string> ReadPayloadAsync(PlaygroundLoadFormRequest request, CancellationToken cancellationToken)
     {
-        var hasUrl = !string.IsNullOrWhiteSpace(request.SwaggerUrl);
-        var hasFile = request.OpenApiFile is not null;
-
-        if (hasUrl == hasFile)
+        try
         {
-            throw new AppException("Provide either swaggerUrl or openApiFile.", HttpStatusCode.BadRequest);
-        }
+            var hasUrl = !string.IsNullOrWhiteSpace(request.SwaggerUrl);
+            var hasFile = request.OpenApiFile is not null;
 
-        if (hasUrl)
-        {
-            if (!Uri.TryCreate(request.SwaggerUrl, UriKind.Absolute, out var uri) ||
-                (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            if (hasUrl == hasFile)
             {
-                throw new AppException("Invalid swaggerUrl format.", HttpStatusCode.BadRequest);
+                throw new AppException("Provide either swaggerUrl or openApiFile.", HttpStatusCode.BadRequest);
             }
 
-            var client = _httpClientFactory.CreateClient("OpenApiSourceClient");
-            using var response = await client.GetAsync(uri, cancellationToken);
-            if (!response.IsSuccessStatusCode)
+            if (hasUrl)
             {
-                throw new AppException($"Failed to load specification from URL. Status: {(int)response.StatusCode}", HttpStatusCode.BadRequest);
+
+                if (!Uri.TryCreate(request.SwaggerUrl, UriKind.Absolute, out var uri) ||
+                    (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+                {
+                    throw new AppException("Invalid swaggerUrl format.", HttpStatusCode.BadRequest);
+                }
+
+                var client = _httpClientFactory.CreateClient("OpenApiSourceClient");
+                return await ReadOpenApiJsonFromUrlAsync(request, client, uri, cancellationToken);
             }
 
-            return await response.Content.ReadAsStringAsync(cancellationToken);
-        }
+            if (request.OpenApiFile is null || request.OpenApiFile.Length == 0)
+            {
+                throw new AppException("OpenAPI file is empty.", HttpStatusCode.BadRequest);
+            }
 
-        if (request.OpenApiFile is null || request.OpenApiFile.Length == 0)
+            await using var stream = request.OpenApiFile.OpenReadStream();
+            using var reader = new StreamReader(stream, Encoding.UTF8, true, 1024, leaveOpen: false);
+            return await reader.ReadToEndAsync(cancellationToken);
+        }
+        catch (AppException)
         {
-            throw new AppException("OpenAPI file is empty.", HttpStatusCode.BadRequest);
+            throw;
+        }
+        catch (Exception)
+        {
+            throw new AppException("Failed to read OpenAPI payload.", HttpStatusCode.InternalServerError);
+        }
+    }
+
+    private static async Task<string> ReadOpenApiJsonFromUrlAsync(
+        PlaygroundLoadFormRequest request,
+        HttpClient client,
+        Uri sourceUri,
+        CancellationToken cancellationToken)
+    {
+        var initialResult = await TryDownloadAsync(client, sourceUri, cancellationToken);
+        if (!initialResult.Success)
+        {
+            throw new AppException($"Failed to load specification from URL. Status: {(int)initialResult.StatusCode}", HttpStatusCode.BadRequest);
         }
 
-        await using var stream = request.OpenApiFile.OpenReadStream();
-        using var reader = new StreamReader(stream, Encoding.UTF8, true, 1024, leaveOpen: false);
-        return await reader.ReadToEndAsync(cancellationToken);
+        if (IsJsonEndpoint(initialResult.FinalUri) && IsOpenApiJson(initialResult.Payload))
+        {
+            request.SwaggerUrl = initialResult.FinalUri.ToString();
+            return initialResult.Payload;
+        }
+
+        var candidateUris = BuildSwaggerJsonCandidates(sourceUri, initialResult.Payload);
+        foreach (var candidateUri in candidateUris)
+        {
+            var candidateResult = await TryDownloadAsync(client, candidateUri, cancellationToken);
+            if (!candidateResult.Success || !IsOpenApiJson(candidateResult.Payload))
+            {
+                continue;
+            }
+
+            request.SwaggerUrl = candidateResult.FinalUri.ToString();
+            return candidateResult.Payload;
+        }
+
+        throw new AppException("Provided swaggerUrl does not point to a valid OpenAPI .json document.", HttpStatusCode.BadRequest);
+    }
+
+    private static IReadOnlyCollection<Uri> BuildSwaggerJsonCandidates(Uri sourceUri, string initialPayload)
+    {
+        var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var extracted in ExtractJsonUrlsFromHtml(sourceUri, initialPayload))
+        {
+            candidates.Add(extracted.ToString());
+        }
+
+        var trimmedPath = sourceUri.AbsolutePath.TrimEnd('/');
+        if (!string.IsNullOrWhiteSpace(trimmedPath))
+        {
+            candidates.Add(new Uri(sourceUri, $"{trimmedPath}/swagger.json").ToString());
+            candidates.Add(new Uri(sourceUri, $"{trimmedPath}/openapi.json").ToString());
+        }
+
+        var swaggerIndex = trimmedPath.IndexOf("/swagger", StringComparison.OrdinalIgnoreCase);
+        if (swaggerIndex >= 0)
+        {
+            var swaggerBasePath = trimmedPath[..(swaggerIndex + "/swagger".Length)];
+            candidates.Add(new Uri(sourceUri, $"{swaggerBasePath}/v1/swagger.json").ToString());
+            candidates.Add(new Uri(sourceUri, $"{swaggerBasePath}/swagger.json").ToString());
+        }
+
+        candidates.Add(new Uri(sourceUri, "/swagger/v1/swagger.json").ToString());
+        candidates.Add(new Uri(sourceUri, "/swagger/v2/swagger.json").ToString());
+        candidates.Add(new Uri(sourceUri, "/swagger/v3/swagger.json").ToString());
+        candidates.Add(new Uri(sourceUri, "/swagger/swagger.json").ToString());
+
+        candidates.Add(new Uri(sourceUri, "/swagger.json").ToString());
+        candidates.Add(new Uri(sourceUri, "/v1/swagger.json").ToString());
+        candidates.Add(new Uri(sourceUri, "/v2/swagger.json").ToString());
+
+        candidates.Add(new Uri(sourceUri, "/openapi.json").ToString());
+
+        return candidates
+            .Select(static url => Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri : null)
+            .Where(static uri => uri is not null && IsJsonEndpoint(uri))
+            .Select(static uri => uri!)
+            .Distinct()
+            .ToList();
+    }
+
+    private static IReadOnlyCollection<Uri> ExtractJsonUrlsFromHtml(Uri sourceUri, string payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload) || payload.IndexOf("json", StringComparison.OrdinalIgnoreCase) < 0)
+        {
+            return [];
+        }
+
+        var matches = Regex.Matches(payload, "(?<url>https?://[^\\\"'\\s]+\\.json(?:\\?[^\\\"'\\s]*)?|/[^\\\"'\\s]+\\.json(?:\\?[^\\\"'\\s]*)?)", RegexOptions.IgnoreCase);
+        var uris = new List<Uri>();
+
+        foreach (Match match in matches)
+        {
+            var value = match.Groups["url"].Value;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            if (Uri.TryCreate(value, UriKind.Absolute, out var absoluteUri) && IsJsonEndpoint(absoluteUri))
+            {
+                uris.Add(absoluteUri);
+                continue;
+            }
+
+            if (Uri.TryCreate(sourceUri, value, out var relativeUri) && IsJsonEndpoint(relativeUri))
+            {
+                uris.Add(relativeUri);
+            }
+        }
+
+        return uris;
+    }
+
+    private static bool IsOpenApiJson(string payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            var hasPaths = document.RootElement.TryGetProperty("paths", out var pathsElement) && pathsElement.ValueKind == JsonValueKind.Object;
+            var hasVersion = document.RootElement.TryGetProperty("swagger", out _) || document.RootElement.TryGetProperty("openapi", out _);
+
+            return hasPaths && hasVersion;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsJsonEndpoint(Uri uri)
+    {
+        var path = uri.AbsolutePath;
+        return path.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task<(bool Success, HttpStatusCode StatusCode, string Payload, Uri FinalUri)> TryDownloadAsync(
+        HttpClient client,
+        Uri uri,
+        CancellationToken cancellationToken)
+    {
+        using var response = await client.GetAsync(uri, cancellationToken);
+        var payload = await response.Content.ReadAsStringAsync(cancellationToken);
+        var finalUri = response.RequestMessage?.RequestUri ?? uri;
+
+        return (response.IsSuccessStatusCode, response.StatusCode, payload, finalUri);
     }
 
 

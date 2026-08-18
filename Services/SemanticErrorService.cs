@@ -1,4 +1,6 @@
 using System.Text;
+using System.Net;
+using Softtek_APIExplorer_Backend.Exceptions;
 using Softtek_APIExplorer_Backend.Models;
 
 namespace Softtek_APIExplorer_Backend.Services;
@@ -14,13 +16,24 @@ public sealed class SemanticErrorService : ISemanticErrorService
 
     public async Task<string> ExplainAsync(string technicalError, OpenApiSessionContext session, CancellationToken cancellationToken)
     {
-        var systemPrompt = BuildSemanticErrorSystemPrompt(session);
-        var explanation = await _llmClient.GenerateStructuredAsync<SemanticErrorExplanation>(
-            systemPrompt,
-            technicalError,
-            cancellationToken);
+        try
+        {
+            var systemPrompt = BuildSemanticErrorSystemPrompt(session);
+            var explanation = await _llmClient.GenerateStructuredAsync<SemanticErrorExplanation>(
+                systemPrompt,
+                technicalError,
+                cancellationToken);
 
-        return $"Root cause: {explanation.RootCause} Suggested fix: {explanation.SuggestedFix}";
+            return $"Root cause: {explanation.RootCause} Suggested fix: {explanation.SuggestedFix}";
+        }
+        catch (AppException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            throw new AppException("Failed to generate semantic error explanation.", HttpStatusCode.InternalServerError);
+        }
     }
 
     private static string BuildSemanticErrorSystemPrompt(OpenApiSessionContext session)

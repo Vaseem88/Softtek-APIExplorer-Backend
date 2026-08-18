@@ -3,7 +3,9 @@ using Azure.AI.OpenAI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.VectorData;
 using Microsoft.SemanticKernel.Connectors.SqliteVec;
+using Softtek_APIExplorer_Backend.Exceptions;
 using Softtek_APIExplorer_Backend.Models;
+using System.Net;
 
 namespace Softtek_APIExplorer_Backend.Services
 {
@@ -75,6 +77,14 @@ namespace Softtek_APIExplorer_Backend.Services
                 VectorStoreCollection<Guid, ApiQueriesVectorStore> vectorStoreCollection = _sqliteVectorStore.GetCollection<Guid, ApiQueriesVectorStore>(collection);
                 _cachedVectorStoreCollection = vectorStoreCollection;
                 return _cachedVectorStoreCollection;
+            }
+            catch (AppException)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                throw new AppException("Failed to create SQLite vector collection.", HttpStatusCode.InternalServerError);
             }
             finally
             {

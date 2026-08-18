@@ -4,7 +4,9 @@ using Azure.AI.OpenAI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Caching.Memory;
 using OpenAI.Chat;
+using Softtek_APIExplorer_Backend.Exceptions;
 using Softtek_APIExplorer_Backend.Models;
+using System.Net;
 
 namespace Softtek_APIExplorer_Backend.Services;
 
@@ -67,14 +69,25 @@ public sealed class AIService
 
     public async Task<string> RunAgentAsync(string userInput, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(userInput))
+        try
         {
-            throw new ArgumentException("User input is required.", nameof(userInput));
-        }
-        var res = await _defaultChatClient.RunAsync(userInput);
+            if (string.IsNullOrWhiteSpace(userInput))
+            {
+                throw new AppException("User input is required.", HttpStatusCode.BadRequest);
+            }
+            var res = await _defaultChatClient.RunAsync(userInput);
 
-        Console.WriteLine(res);
-        return res.Text ?? string.Empty;
+            Console.WriteLine(res);
+            return res.Text ?? string.Empty;
+        }
+        catch (AppException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            throw new AppException("Failed to execute AI agent request.", HttpStatusCode.InternalServerError);
+        }
     }
 
 
@@ -83,19 +96,30 @@ public sealed class AIService
 
     public async Task<string> RunKnowledgeBaseAgent(string userSessionId, string userInput, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(userSessionId))
+        try
         {
-            throw new ArgumentException("User session id is required.", nameof(userSessionId));
-        }
+            if (string.IsNullOrWhiteSpace(userSessionId))
+            {
+                throw new AppException("User session id is required.", HttpStatusCode.BadRequest);
+            }
 
-        if (string.IsNullOrWhiteSpace(userInput))
+            if (string.IsNullOrWhiteSpace(userInput))
+            {
+                throw new AppException("User input is required.", HttpStatusCode.BadRequest);
+            }
+
+            var normalizedSessionId = userSessionId.Trim();
+            var normalizedInput = userInput.Trim();
+            return await _knowledgeBaseHelper.ExecuteKnowledgeBaseQueryAsync(normalizedSessionId, normalizedInput);
+        }
+        catch (AppException)
         {
-            throw new ArgumentException("User input is required.", nameof(userInput));
+            throw;
         }
-
-        var normalizedSessionId = userSessionId.Trim();
-        var normalizedInput = userInput.Trim();
-        return await _knowledgeBaseHelper.ExecuteKnowledgeBaseQueryAsync(normalizedSessionId, normalizedInput);
+        catch (Exception)
+        {
+            throw new AppException("Failed to execute knowledge base request.", HttpStatusCode.InternalServerError);
+        }
     }
     public async IAsyncEnumerable<string> RunKnowledgeBaseStreamAgent(string userSessionId, string userInput, CancellationToken cancellationToken = default)
     {

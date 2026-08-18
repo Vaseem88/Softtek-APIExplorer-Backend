@@ -1,5 +1,8 @@
 using Softtek_APIExplorer_Backend.Models;
 
+using Softtek_APIExplorer_Backend.Exceptions;
+using System.Net;
+
 namespace Softtek_APIExplorer_Backend.Services;
 
 public sealed class PlaygroundOrchestratorService : IPlaygroundOrchestratorService
@@ -23,24 +26,46 @@ public sealed class PlaygroundOrchestratorService : IPlaygroundOrchestratorServi
 
     public async Task<PlaygroundLoadResponse> LoadOpenApiAsync(PlaygroundLoadFormRequest request, CancellationToken cancellationToken)
     {
-        var result = await _openApiSpecService.LoadAsync(request, cancellationToken);
-
-        var isDataIngested = await _aiService.IngestData(result);
-
-        if (isDataIngested)
+        try
         {
-            return result;
+            var result = await _openApiSpecService.LoadAsync(request, cancellationToken);
+
+            var isDataIngested = await _aiService.IngestData(result);
+
+            if (isDataIngested)
+            {
+                return result;
+            }
+            else
+            {
+                throw new AppException("Failed to ingest data into AI service.", HttpStatusCode.InternalServerError);
+            }
         }
-        else
+        catch (AppException)
         {
-            throw new Exception("Failed to ingest data into AI service.");
+            throw;
+        }
+        catch (Exception)
+        {
+            throw new AppException("Failed to load OpenAPI session.", HttpStatusCode.InternalServerError);
         }
     }
 
     public async Task<PlaygroundChatResponse> ChatAsync(PlaygroundChatRequest request, CancellationToken cancellationToken)
     {
-        var session = _openApiSpecService.GetRequiredSession(request.SessionId);
-        return await _chatService.ResolveIntentAsync(request, session, cancellationToken);
+        try
+        {
+            var session = _openApiSpecService.GetRequiredSession(request.SessionId);
+            return await _chatService.ResolveIntentAsync(request, session, cancellationToken);
+        }
+        catch (AppException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            throw new AppException("Failed to process chat operation.", HttpStatusCode.InternalServerError);
+        }
     }
 
     public async IAsyncEnumerable<string> ChatStreamAsync(PlaygroundChatRequest request, CancellationToken cancellationToken)
@@ -54,7 +79,18 @@ public sealed class PlaygroundOrchestratorService : IPlaygroundOrchestratorServi
 
     public async Task<PlaygroundExecuteResponse> ExecuteAsync(PlaygroundExecuteRequest request, CancellationToken cancellationToken)
     {
-        var session = _openApiSpecService.GetRequiredSession(request.SessionId);
-        return await _executionProxyService.ExecuteAsync(request, session, cancellationToken);
+        try
+        {
+            var session = _openApiSpecService.GetRequiredSession(request.SessionId);
+            return await _executionProxyService.ExecuteAsync(request, session, cancellationToken);
+        }
+        catch (AppException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            throw new AppException("Failed to execute proxy operation.", HttpStatusCode.InternalServerError);
+        }
     }
 }

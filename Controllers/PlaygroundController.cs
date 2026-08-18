@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Softtek_APIExplorer_Backend.Models;
+using Softtek_APIExplorer_Backend.Exceptions;
 using Softtek_APIExplorer_Backend.Services;
+using System.Net;
 
 namespace Softtek_APIExplorer_Backend.Controllers;
 
@@ -21,9 +23,20 @@ public sealed class PlaygroundController : ControllerBase
         [FromBody] PlaygroundLoadFormRequest request,
         CancellationToken cancellationToken)
     {
-        request.SessionId = Guid.NewGuid().ToString();
-        var result = await _orchestrator.LoadOpenApiAsync(request, cancellationToken);
-        return Ok(result);
+        try
+        {
+            request.SessionId = Guid.NewGuid().ToString();
+            var result = await _orchestrator.LoadOpenApiAsync(request, cancellationToken);
+            return Ok(result);
+        }
+        catch (AppException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            throw new AppException("Failed to load OpenAPI document.", HttpStatusCode.InternalServerError);
+        }
     }
 
     [HttpPost("chat")]
@@ -31,8 +44,19 @@ public sealed class PlaygroundController : ControllerBase
         [FromBody] PlaygroundChatRequest request,
         CancellationToken cancellationToken)
     {
-        var result = await _orchestrator.ChatAsync(request, cancellationToken);
-        return Ok(result);
+        try
+        {
+            var result = await _orchestrator.ChatAsync(request, cancellationToken);
+            return Ok(result);
+        }
+        catch (AppException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            throw new AppException("Failed to process chat request.", HttpStatusCode.InternalServerError);
+        }
     }
 
     [HttpPost("chatStream")]
@@ -41,27 +65,38 @@ public sealed class PlaygroundController : ControllerBase
         [FromBody] PlaygroundChatRequest request,
         CancellationToken cancellationToken)
     {
-        if (request is null || string.IsNullOrWhiteSpace(request.SessionId) || string.IsNullOrWhiteSpace(request.Intent))
+        try
         {
-            return BadRequest("SessionId and Intent are required.");
-        }
-
-        Response.StatusCode = StatusCodes.Status200OK;
-        Response.ContentType = "text/event-stream";
-        Response.Headers.CacheControl = "no-cache";
-        Response.Headers.Connection = "keep-alive";
-
-        await foreach (var chunk in _orchestrator.ChatStreamAsync(request, cancellationToken).WithCancellation(cancellationToken))
-        {
-            if (string.IsNullOrEmpty(chunk))
+            if (request is null || string.IsNullOrWhiteSpace(request.SessionId) || string.IsNullOrWhiteSpace(request.Intent))
             {
-                continue;
+                return BadRequest("SessionId and Intent are required.");
             }
 
-            await WriteSseEventAsync(chunk, cancellationToken);
-        }
+            Response.StatusCode = StatusCodes.Status200OK;
+            Response.ContentType = "text/event-stream";
+            Response.Headers.CacheControl = "no-cache";
+            Response.Headers.Connection = "keep-alive";
 
-        return new EmptyResult();
+            await foreach (var chunk in _orchestrator.ChatStreamAsync(request, cancellationToken).WithCancellation(cancellationToken))
+            {
+                if (string.IsNullOrEmpty(chunk))
+                {
+                    continue;
+                }
+
+                await WriteSseEventAsync(chunk, cancellationToken);
+            }
+
+            return new EmptyResult();
+        }
+        catch (AppException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            throw new AppException("Failed to stream chat response.", HttpStatusCode.InternalServerError);
+        }
     }
 
     private async Task WriteSseEventAsync(string chunk, CancellationToken cancellationToken)
@@ -114,7 +149,18 @@ public sealed class PlaygroundController : ControllerBase
         [FromBody] PlaygroundExecuteRequest request,
         CancellationToken cancellationToken)
     {
-        var result = await _orchestrator.ExecuteAsync(request, cancellationToken);
-        return StatusCode((int)result.StatusCode, result);
+        try
+        {
+            var result = await _orchestrator.ExecuteAsync(request, cancellationToken);
+            return StatusCode((int)result.StatusCode, result);
+        }
+        catch (AppException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            throw new AppException("Failed to execute API request.", HttpStatusCode.InternalServerError);
+        }
     }
 }

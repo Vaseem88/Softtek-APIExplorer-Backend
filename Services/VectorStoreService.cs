@@ -1,6 +1,8 @@
 ﻿using Microsoft.Extensions.VectorData;
 using Microsoft.Extensions.VectorData;
+using Softtek_APIExplorer_Backend.Exceptions;
 using Softtek_APIExplorer_Backend.Models;
+using System.Net;
 
 namespace Softtek_APIExplorer_Backend.Services
 {
@@ -123,9 +125,13 @@ namespace Softtek_APIExplorer_Backend.Services
                     }
                 }
             }
-            catch (Exception ex)
+            catch (AppException)
             {
-                throw ex;
+                throw;
+            }
+            catch (Exception)
+            {
+                throw new AppException("Failed to ingest data into vector store.", HttpStatusCode.InternalServerError);
             }
 
             return true;
